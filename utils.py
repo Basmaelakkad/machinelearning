@@ -1,252 +1,229 @@
-import numpy as np
 import sys
-from os.path import join
+import numpy as np
 from matplotlib import pyplot
+from matplotlib.animation import FuncAnimation
+import matplotlib as mpl
 
 sys.path.append('..')
 
 
 
-def normalizeRatings(Y, R):
+def displayData(X, example_width=None, figsize=(10, 10)):
     """
-    Preprocess data by subtracting mean rating for every movie (every row).
-
-    Parameters
-    ----------
-    Y : array_like
-        The user ratings for all movies. A matrix of shape (num_movies x num_users).
-
-    R : array_like
-        Indicator matrix for movies rated by users. A matrix of shape (num_movies x num_users).
-
-    Returns
-    -------
-    Ynorm : array_like
-        A matrix of same shape as Y, after mean normalization.
-
-    Ymean : array_like
-        A vector of shape (num_movies, ) containing the mean rating for each movie.
-    """
-    m, n = Y.shape
-    Ymean = np.zeros(m)
-    Ynorm = np.zeros(Y.shape)
-
-    for i in range(m):
-        idx = R[i, :] == 1
-        Ymean[i] = np.mean(Y[i, idx])
-        Ynorm[i, idx] = Y[i, idx] - Ymean[i]
-
-    return Ynorm, Ymean
-
-
-def loadMovieList():
-    """
-    Reads the fixed movie list in movie_ids.txt and returns a list of movie names.
-
-    Returns
-    -------
-    movieNames : list
-        A list of strings, representing all movie names.
-    """
-    # Read the fixed movieulary list
-    with open(join('Data', 'movie_ids.txt'),  encoding='ISO-8859-1') as fid:
-        movies = fid.readlines()
-
-    movieNames = []
-    for movie in movies:
-        parts = movie.split()
-        movieNames.append(' '.join(parts[1:]).strip())
-    return movieNames
-
-
-def computeNumericalGradient(J, theta, e=1e-4):
-    """
-    Computes the gradient using "finite differences" and gives us a numerical estimate of the
-    gradient.
-
-    Parameters
-    ----------
-    J : func
-        The cost function which will be used to estimate its numerical gradient.
-
-    theta : array_like
-        The one dimensional unrolled network parameters. The numerical gradient is computed at
-         those given parameters.
-
-    e : float (optional)
-        The value to use for epsilon for computing the finite difference.
-
-    Returns
-    -------
-    numgrad : array_like
-        The numerical gradient with respect to theta. Has same shape as theta.
-
-    Notes
-    -----
-    The following code implements numerical gradient checking, and
-    returns the numerical gradient. It sets `numgrad[i]` to (a numerical
-    approximation of) the partial derivative of J with respect to the
-    i-th input argument, evaluated at theta. (i.e., `numgrad[i]` should
-    be the (approximately) the partial derivative of J with respect
-    to theta[i].)
-    """
-    numgrad = np.zeros(theta.shape)
-    perturb = np.diag(e * np.ones(theta.shape))
-    for i in range(theta.size):
-        loss1, _ = J(theta - perturb[:, i])
-        loss2, _ = J(theta + perturb[:, i])
-        numgrad[i] = (loss2 - loss1)/(2*e)
-    return numgrad
-
-
-def checkCostFunction(cofiCostFunc, lambda_=0.):
-    """
-    Creates a collaborative filtering problem to check your cost function and gradients.
-    It will output the  analytical gradients produced by your code and the numerical gradients
-    (computed using computeNumericalGradient). These two gradient computations should result
-    in very similar values.
-
-    Parameters
-    ----------
-    cofiCostFunc: func
-        Implementation of the cost function.
-
-    lambda_ : float, optional
-        The regularization parameter.
-    """
-    # Create small problem
-    X_t = np.random.rand(4, 3)
-    Theta_t = np.random.rand(5, 3)
-
-    # Zap out most entries
-    Y = np.dot(X_t, Theta_t.T)
-    Y[np.random.rand(*Y.shape) > 0.5] = 0
-    R = np.zeros(Y.shape)
-    R[Y != 0] = 1
-
-    # Run Gradient Checking
-    X = np.random.randn(*X_t.shape)
-    Theta = np.random.randn(*Theta_t.shape)
-    num_movies, num_users = Y.shape
-    num_features = Theta_t.shape[1]
-
-    params = np.concatenate([X.ravel(), Theta.ravel()])
-    numgrad = computeNumericalGradient(
-        lambda x: cofiCostFunc(x, Y, R, num_users, num_movies, num_features, lambda_), params)
-
-    cost, grad = cofiCostFunc(params, Y, R, num_users,num_movies, num_features, lambda_)
-
-    print(np.stack([numgrad, grad], axis=1))
-    print('\nThe above two columns you get should be very similar.'
-          '(Left-Your Numerical Gradient, Right-Analytical Gradient)')
-
-    diff = np.linalg.norm(numgrad-grad)/np.linalg.norm(numgrad+grad)
-    print('If your cost function implementation is correct, then '
-          'the relative difference will be small (less than 1e-9).')
-    print('\nRelative Difference: %g' % diff)
-
-
-def multivariateGaussian(X, mu, Sigma2):
-    """
-    Computes the probability density function of the multivariate gaussian distribution.
+    Displays 2D data in a nice grid.
 
     Parameters
     ----------
     X : array_like
-        The dataset of shape (m x n). Where there are m examples of n-dimensions.
+        The input data of size (m x n) where m is the number of examples and n is the number of
+        features.
 
-    mu : array_like
-        A vector of shape (n,) contains the means for each dimension (feature).
+    example_width : int, optional
+        THe width of each 2-D image in pixels. If not provided, the image is assumed to be square,
+        and the width is the floor of the square root of total number of pixels.
 
-    Sigma2 : array_like
-        Either a vector of shape (n,) containing the variances of independent features
-        (i.e. it is the diagonal of the correlation matrix), or the full
-        correlation matrix of shape (n x n) which can represent dependent features.
-
-    Returns
-    ------
-    p : array_like
-        A vector of shape (m,) which contains the computed probabilities at each of the
-        provided examples.
+    figsize : tuple, optional
+        A 2-element tuple indicating the width and height of figure in inches.
     """
-    k = mu.size
+    # Compute rows, cols
+    if X.ndim == 2:
+        m, n = X.shape
+    elif X.ndim == 1:
+        n = X.size
+        m = 1
+        X = X[None]  # Promote to a 2 dimensional array
+    else:
+        raise IndexError('Input X should be 1 or 2 dimensional.')
 
-    # if sigma is given as a diagonal, compute the matrix
-    if Sigma2.ndim == 1:
-        Sigma2 = np.diag(Sigma2)
+    example_width = example_width or int(np.round(np.sqrt(n)))
+    example_height = int(n / example_width)
 
-    X = X - mu
-    p = (2 * np.pi) ** (- k / 2) * np.linalg.det(Sigma2) ** (-0.5)\
-        * np.exp(-0.5 * np.sum(np.dot(X, np.linalg.pinv(Sigma2)) * X, axis=1))
-    return p
+    # Compute number of items to display
+    display_rows = int(np.floor(np.sqrt(m)))
+    display_cols = int(np.ceil(m / display_rows))
+
+    fig, ax_array = pyplot.subplots(display_rows, display_cols, figsize=figsize)
+    fig.subplots_adjust(wspace=0.025, hspace=0.025)
+
+    ax_array = [ax_array] if m == 1 else ax_array.ravel()
+
+    for i, ax in enumerate(ax_array):
+        ax.imshow(X[i].reshape(example_height, example_width, order='F'), cmap='gray')
+        ax.axis('off')
 
 
-def visualizeFit(X, mu, sigma2):
+def featureNormalize(X):
     """
-    Visualize the dataset and its estimated distribution.
-    This visualization shows you the  probability density function of the Gaussian distribution.
-    Each example has a location (x1, x2) that depends on its feature values.
+    Normalizes the features in X returns a normalized version of X where the mean value of each
+    feature is 0 and the standard deviation is 1. This is often a good preprocessing step to do when
+    working with learning algorithms.
 
     Parameters
     ----------
     X : array_like
-        The dataset of shape (m x 2). Where there are m examples of 2-dimensions. We need at most
-        2-D features to be able to visualize the distribution.
+        An dataset which is a (m x n) matrix, where m is the number of examples,
+        and n is the number of dimensions for each example.
+
+    Returns
+    -------
+    X_norm : array_like
+        The normalized input dataset.
 
     mu : array_like
-        A vector of shape (n,) contains the means for each dimension (feature).
+        A vector of size n corresponding to the mean for each dimension across all examples.
 
-    sigma2 : array_like
-        Either a vector of shape (n,) containing the variances of independent features
-        (i.e. it is the diagonal of the correlation matrix), or the full
-        correlation matrix of shape (n x n) which can represent dependent features.
+    sigma : array_like
+        A vector of size n corresponding to the standard deviations for each dimension across
+        all examples.
     """
+    mu = np.mean(X, axis=0)
+    X_norm = X - mu
 
-    X1, X2 = np.meshgrid(np.arange(0, 35.5, 0.5), np.arange(0, 35.5, 0.5))
-    Z = multivariateGaussian(np.stack([X1.ravel(), X2.ravel()], axis=1), mu, sigma2)
-    Z = Z.reshape(X1.shape)
+    sigma = np.std(X_norm, axis=0, ddof=1)
+    X_norm /= sigma
+    return X_norm, mu, sigma
 
-    pyplot.plot(X[:, 0], X[:, 1], 'bx', mec='b', mew=2, ms=8)
 
-    if np.all(abs(Z) != np.inf):
-        pyplot.contour(X1, X2, Z, levels=10**(np.arange(-20., 1, 3)), zorder=100)
+def plotProgresskMeans(i, X, centroid_history, idx_history):
+    """
+    A helper function that displays the progress of k-Means as it is running. It is intended for use
+    only with 2D data. It plots data points with colors assigned to each centroid. With the
+    previous centroids, it also plots a line between the previous locations and current locations
+    of the centroids.
+
+    Parameters
+    ----------
+    i : int
+        Current iteration number of k-means. Used for matplotlib animation function.
+
+    X : array_like
+        The dataset, which is a matrix (m x n). Note since the plot only supports 2D data, n should
+        be equal to 2.
+
+    centroid_history : list
+        A list of computed centroids for all iteration.
+
+    idx_history : list
+        A list of computed assigned indices for all iterations.
+    """
+    K = centroid_history[0].shape[0]
+    pyplot.gcf().clf()
+    cmap = pyplot.cm.rainbow
+    norm = mpl.colors.Normalize(vmin=0, vmax=2)
+
+    for k in range(K):
+        current = np.stack([c[k, :] for c in centroid_history[:i+1]], axis=0)
+        pyplot.plot(current[:, 0], current[:, 1],
+                    '-Xk',
+                    mec='k',
+                    lw=2,
+                    ms=10,
+                    mfc=cmap(norm(k)),
+                    mew=2)
+
+        pyplot.scatter(X[:, 0], X[:, 1],
+                       c=idx_history[i],
+                       cmap=cmap,
+                       marker='o',
+                       s=8**2,
+                       linewidths=1,)
+    pyplot.grid(False)
+    pyplot.title('Iteration number %d' % (i+1))
+
+
+def runkMeans(X, centroids, findClosestCentroids, computeCentroids,
+              max_iters=10, plot_progress=False):
+    """
+    Runs the K-means algorithm.
+
+    Parameters
+    ----------
+    X : array_like
+        The data set of size (m, n). Each row of X is a single example of n dimensions. The
+        data set is a total of m examples.
+
+    centroids : array_like
+        Initial centroid location for each clusters. This is a matrix of size (K, n). K is the total
+        number of clusters and n is the dimensions of each data point.
+
+    findClosestCentroids : func
+        A function (implemented by student) reference which computes the cluster assignment for
+        each example.
+
+    computeCentroids : func
+        A function(implemented by student) reference which computes the centroid of each cluster.
+
+    max_iters : int, optional
+        Specifies the total number of interactions of K-Means to execute.
+
+    plot_progress : bool, optional
+        A flag that indicates if the function should also plot its progress as the learning happens.
+        This is set to false by default.
+
+    Returns
+    -------
+    centroids : array_like
+        A (K x n) matrix of the computed (updated) centroids.
+    idx : array_like
+        A vector of size (m,) for cluster assignment for each example in the dataset. Each entry
+        in idx is within the range [0 ... K-1].
+
+    anim : FuncAnimation, optional
+        A matplotlib animation object which can be used to embed a video within the jupyter
+        notebook. This is only returned if `plot_progress` is `True`.
+    """
+    K = centroids.shape[0]
+    idx = None
+    idx_history = []
+    centroid_history = []
+
+    for i in range(max_iters):
+        idx = findClosestCentroids(X, centroids)
+
+        if plot_progress:
+            idx_history.append(idx)
+            centroid_history.append(centroids)
+
+        centroids = computeCentroids(X, idx, K)
+
+    if plot_progress:
+        fig = pyplot.figure()
+        anim = FuncAnimation(fig, plotProgresskMeans,
+                             frames=max_iters,
+                             interval=500,
+                             repeat_delay=2,
+                             fargs=(X, centroid_history, idx_history))
+        return centroids, idx, anim
+
+    return centroids, idx
+
 
 
 
     def __init__(self):
-        part_names = ['Estimate Gaussian Parameters',
-                      'Select Threshold',
-                      'Collaborative Filtering Cost',
-                      'Collaborative Filtering Gradient',
-                      'Regularized Cost',
-                      'Regularized Gradient']
-        super().__init__('anomaly-detection-and-recommender-systems', part_names)
+        part_names = ['Find Closest Centroids (k-Means)',
+                      'Compute Centroid Means (k-Means)',
+                      'PCA',
+                      'Project Data (PCA)',
+                      'Recover Data (PCA)']
+        super().__init__('k-means-clustering-and-pca', part_names)
 
     def __iter__(self):
-        for part_id in range(1, 7):
+        for part_id in range(1, 6):
             try:
                 func = self.functions[part_id]
-
                 # Each part has different expected arguments/different function
                 if part_id == 1:
-                    res = np.hstack(func(self.X)).tolist()
+                    res = 1 + func(self.X, self.C)
                 elif part_id == 2:
-                    res = np.hstack(func(self.yval, self.pval)).tolist()
+                    res = func(self.X, self.idx, 3)
                 elif part_id == 3:
-                    J, grad = func(self.params, self.Y, self.R, self.n_u, self.n_m, self.n)
-                    res = J
+                    U, S = func(self.X)
+                    res = np.hstack([U.ravel('F'), np.diag(S).ravel('F')]).tolist()
                 elif part_id == 4:
-                    J, grad = func(self.params, self.Y, self.R, self.n_u, self.n_m, self.n, 0)
-                    xgrad = grad[:self.n_m*self.n].reshape(self.n_m, self.n)
-                    thetagrad = grad[self.n_m*self.n:].reshape(self.n_u, self.n)
-                    res = np.hstack([xgrad.ravel('F'), thetagrad.ravel('F')]).tolist()
+                    res = func(self.X, self.Z, 5)
                 elif part_id == 5:
-                    res, _ = func(self.params, self.Y, self.R, self.n_u, self.n_m, self.n, 1.5)
-                elif part_id == 6:
-                    J, grad = func(self.params, self.Y, self.R, self.n_u, self.n_m, self.n, 1.5)
-                    xgrad = grad[:self.n_m*self.n].reshape(self.n_m, self.n)
-                    thetagrad = grad[self.n_m*self.n:].reshape(self.n_u, self.n)
-                    res = np.hstack([xgrad.ravel('F'), thetagrad.ravel('F')]).tolist()
+                    res = func(self.X[:, :5], self.Z, 5)
                 else:
                     raise KeyError
                 yield part_id, res
